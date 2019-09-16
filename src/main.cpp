@@ -7,7 +7,7 @@
 #include "Eigen-3.3/Eigen/QR"
 #include "helpers.h"
 #include "json.hpp"
-#include "spline/src/spline.h"
+#include "spline.h"
 
 // for convenience
 using nlohmann::json;
