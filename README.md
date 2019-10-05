@@ -1,145 +1,161 @@
-# CarND-Path-Planning-Project
-Self-Driving Car Engineer Nanodegree Program
-   
-### Simulator.
-You can download the Term3 Simulator which contains the Path Planning Project from the [releases tab (https://github.com/udacity/self-driving-car-sim/releases/tag/T3_v1.2).  
+Reflection
 
-To run the simulator on Mac/Linux, first make the binary file executable with the following command:
-```shell
-sudo chmod u+x {simulator_file_name}
-```
+# 1. Jerk, acceleration and speed control mechanisms. #
+To control the speed, I use a speed control. First define the maximum speed is 49.5 miles/hour, and define a speed diff is 0.224 mile/hour, because 0.224 mile/hour = 0.5 m/s. The start-up velocity is 0 miles/hour.  
 
-### Goals
-In this project your goal is to safely navigate around a virtual highway with other traffic that is driving +-10 MPH of the 50 MPH speed limit. You will be provided the car's localization and sensor fusion data, there is also a sparse map list of waypoints around the highway. The car should try to go as close as possible to the 50 MPH speed limit, which means passing slower traffic when possible, note that other cars will try to change lanes too. The car should avoid hitting other cars at all cost as well as driving inside of the marked road lanes at all times, unless going from one lane to another. The car should be able to make one complete loop around the 6946m highway. Since the car is trying to go 50 MPH, it should take a little over 5 minutes to complete 1 loop. Also the car should not experience total acceleration over 10 m/s^2 and jerk that is greater than 10 m/s^3.
+When the car first start up, the reference velocity = 0, then velocity accumulated in the loop to maximum speed.  
 
-#### The map of the highway is in data/highway_map.txt
-Each waypoint in the list contains  [x,y,s,dx,dy] values. x and y are the waypoint's map coordinate position, the s value is the distance along the road to get to that waypoint in meters, the dx and dy values define the unit normal vector pointing outward of the highway loop.
+      ref_vel += speed_diff;  
+    if ( ref_vel > MAX_SPEED ) {
+       ref_vel = MAX_SPEED;  
+    } else if ( ref_vel < MAX_ACC ) {
+       ref_vel = MAX_ACC;
+    }  
+When detected in front it is a car and the distance is very close, the car will check if it is possible to change lane or not, if it is not possible, the speed will slow down.   
+ 
+    else 
+    {
+      speed_diff -= MAX_ACC;
+    }
 
-The highway's waypoints loop around so the frenet s value, distance along the road, goes from 0 to 6945.554.
+    
+If it is no car in front of ego car, it will speed up until 49.5 mile/hour.  
 
-## Basic Build Instructions
+    if ( ref_vel < MAX_SPEED )
+    {
+      speed_diff += MAX_ACC;
+    }
 
-1. Clone this repo.
-2. Make a build directory: `mkdir build && cd build`
-3. Compile: `cmake .. && make`
-4. Run it: `./path_planning`.
+![Alt text](/IMG/safe5.11.png)
+# 2. Collision avoidance mechanism. #
+The sensor fusion vectors have contained useful information of other cars in the road. Loop the sensor fusion and calculate the lane of the cars and check if it is in the same lane as the ego car.   
 
-Here is the data provided from the Simulator to the C++ Program
+    int car_lane = -1;
+    // is it on the same lane we are
+    if ( d 0 && d < 4 ) 
+    {
+      car_lane = 0;
+    } 
+    else if ( d 4 && d < 8 ) 
+    {
+      car_lane = 1;
+    } 
+    else if ( d 8 && d < 12 ) 
+    {
+      car_lane = 2;
+    }
+    if (car_lane < 0) 
+    {
+      continue;
+    }
 
-#### Main car's localization Data (No Noise)
+If other car is in the same lane of ego car front, check the distance and if the distance is too close, then prepare to change lane. Because the start state of ego car is in the center lane = 1, so it has two options either to change to left lane or change to right lane, before change lane there's also a distance check about cars in the left/right lane.  
+If both lane is not able to change, then slow down the car speed.  
 
-["x"] The car's x position in map coordinates
+    if ( car_ahead ) 
+			{ // Car ahead
+              if ( !car_left && lane > 0 ) 
+			  {
+                // if there is no car left and there is a left lane.
+                lane--; // Change lane left.
+              } 
+			  else if ( !car_righ && lane != 2 )
+			  {
+                // if there is no car right and there is a right lane.
+                lane++; // Change lane right.
+              } 
+			  else 
+			  {
+                speed_diff -= MAX_ACC;
+              }
+            } 
 
-["y"] The car's y position in map coordinates
+If the ego car is not in center lane, check the center lane is any car in front, if no, then change to center lane.  
+ 
+    if ( lane != 1 ) 
+			  { // if we are not on the center lane.
+                if ( ( lane == 0 && !car_righ ) || ( lane == 2 && !car_left ) ) 
+				{
+                  lane = 1; // Back to center.
+                }
+              }
 
-["s"] The car's s position in frenet coordinates
+# 3. Path generator #
+This code does the calculation of the trajectory based on the speed and lane output from the behavior, car coordinates and past path points.
 
-["d"] The car's d position in frenet coordinates
+First, the last two points of the previous trajectory are used.   
 
-["yaw"] The car's yaw angle in the map
+    ref_x = previous_path_x[previous_path_x.size() - 1];
+			  ref_y = previous_path_y[previous_path_y.size() - 1];
 
-["speed"] The car's speed in MPH
+			  double ref_x_prev = previous_path_x[previous_path_x.size() - 2];
+			  double ref_y_prev = previous_path_y[previous_path_y.size() - 2];
+			  ref_yaw = atan2(ref_y - ref_y_prev, ref_x - ref_x_prev);
 
-#### Previous path data given to the Planner
+			  ptsx.push_back(ref_x_prev);
+			  ptsx.push_back(ref_x);
 
-//Note: Return the previous list but with processed points removed, can be a nice tool to show how far along
-the path has processed since last time. 
+			  ptsy.push_back(ref_y_prev);
+			  ptsy.push_back(ref_y);  
 
-["previous_path_x"] The previous list of x points previously given to the simulator
+in conjunction three points at a far distance (30, 60, 90) to initialize the spline calculation.  
 
-["previous_path_y"] The previous list of y points previously given to the simulator
+    vector<double> next_wp0 = getXY(car_s + 30, 2 + (4 * lane), map_waypoints_s, map_waypoints_x, map_waypoints_y);
+		  vector<double> next_wp1 = getXY(car_s + 60, 2 + (4 * lane), map_waypoints_s, map_waypoints_x, map_waypoints_y);
+		  vector<double> next_wp2 = getXY(car_s + 90, 2 + (4 * lane), map_waypoints_s, map_waypoints_x, map_waypoints_y);
 
-#### Previous path's end s and d values 
+		  ptsx.push_back(next_wp0[0]);
+		  ptsx.push_back(next_wp1[0]);
+		  ptsx.push_back(next_wp2[0]);
 
-["end_path_s"] The previous list's last point's frenet s value
-
-["end_path_d"] The previous list's last point's frenet d value
-
-#### Sensor Fusion Data, a list of all other car's attributes on the same side of the road. (No Noise)
-
-["sensor_fusion"] A 2d vector of cars and then that car's [car's unique ID, car's x position in map coordinates, car's y position in map coordinates, car's x velocity in m/s, car's y velocity in m/s, car's s position in frenet coordinates, car's d position in frenet coordinates. 
-
-## Details
-
-1. The car uses a perfect controller and will visit every (x,y) point it recieves in the list every .02 seconds. The units for the (x,y) points are in meters and the spacing of the points determines the speed of the car. The vector going from a point to the next point in the list dictates the angle of the car. Acceleration both in the tangential and normal directions is measured along with the jerk, the rate of change of total Acceleration. The (x,y) point paths that the planner recieves should not have a total acceleration that goes over 10 m/s^2, also the jerk should not go over 50 m/s^3. (NOTE: As this is BETA, these requirements might change. Also currently jerk is over a .02 second interval, it would probably be better to average total acceleration over 1 second and measure jerk from that.
-
-2. There will be some latency between the simulator running and the path planner returning a path, with optimized code usually its not very long maybe just 1-3 time steps. During this delay the simulator will continue using points that it was last given, because of this its a good idea to store the last points you have used so you can have a smooth transition. previous_path_x, and previous_path_y can be helpful for this transition since they show the last points given to the simulator controller with the processed points already removed. You would either return a path that extends this previous path or make sure to create a new path that has a smooth transition with this last path.
-
-## Tips
-
-A really helpful resource for doing this project and creating smooth trajectories was using http://kluge.in-chemnitz.de/opensource/spline/, the spline function is in a single hearder file is really easy to use.
-
----
-
-## Dependencies
-
-* cmake >= 3.5
-  * All OSes: [click here for installation instructions](https://cmake.org/install/)
-* make >= 4.1
-  * Linux: make is installed by default on most Linux distros
-  * Mac: [install Xcode command line tools to get make](https://developer.apple.com/xcode/features/)
-  * Windows: [Click here for installation instructions](http://gnuwin32.sourceforge.net/packages/make.htm)
-* gcc/g++ >= 5.4
-  * Linux: gcc / g++ is installed by default on most Linux distros
-  * Mac: same deal as make - [install Xcode command line tools]((https://developer.apple.com/xcode/features/)
-  * Windows: recommend using [MinGW](http://www.mingw.org/)
-* [uWebSockets](https://github.com/uWebSockets/uWebSockets)
-  * Run either `install-mac.sh` or `install-ubuntu.sh`.
-  * If you install from source, checkout to commit `e94b6e1`, i.e.
-    ```
-    git clone https://github.com/uWebSockets/uWebSockets 
-    cd uWebSockets
-    git checkout e94b6e1
-    ```
-
-## Editor Settings
-
-We've purposefully kept editor configuration files out of this repo in order to
-keep it as simple and environment agnostic as possible. However, we recommend
-using the following settings:
-
-* indent using spaces
-* set tab width to 2 spaces (keeps the matrices in source code aligned)
-
-## Code Style
-
-Please (do your best to) stick to [Google's C++ style guide](https://google.github.io/styleguide/cppguide.html).
-
-## Project Instructions and Rubric
-
-Note: regardless of the changes you make, your project must be buildable using
-cmake and make!
+		  ptsy.push_back(next_wp0[1]);
+		  ptsy.push_back(next_wp1[1]);
+		  ptsy.push_back(next_wp2[1]);  
 
 
-## Call for IDE Profiles Pull Requests
+To make the work less complicated to the spline calculation based on those points, the coordinates are transformed (shift and rotation) to local car coordinates.
+To achieve the spline calculation, I use a free spline library that recommended in the course.  
+ 
+		  for (int i = 0; i < ptsx.size(); i++)
+		  {
+			  double dx = ptsx[i] - ref_x;
+			  double dy = ptsy[i] - ref_y;
+			  ptsx[i] = (dx * cos(0 - ref_yaw) - dy * sin(0 - ref_yaw));
+			  ptsy[i] = (dx * sin(0 - ref_yaw) + dy * cos(0 - ref_yaw));
+		  }
+		  tk::spline s;
+		  s.set_points(ptsx, ptsy);  
 
-Help your fellow students!
+In order to ensure more continuity on the trajectory, the pass trajectory points are copied to the new trajectory.  
 
-We decided to create Makefiles with cmake to keep this project as platform
-agnostic as possible. Similarly, we omitted IDE profiles in order to ensure
-that students don't feel pressured to use one IDE or another.
+    for (int i = 0; i < previous_path_x.size(); i++)
+		  {
+			  next_x_vals.push_back(previous_path_x[i]);
+			  next_y_vals.push_back(previous_path_y[i]);
+		  }
 
-However! I'd love to help people get up and running with their IDEs of choice.
-If you've created a profile for an IDE that you think other students would
-appreciate, we'd love to have you add the requisite profile files and
-instructions to ide_profiles/. For example if you wanted to add a VS Code
-profile, you'd add:
+The rest of the points are calculated by evaluating the spline and transforming the output coordinates to not local coordinates.  
 
-* /ide_profiles/vscode/.vscode
-* /ide_profiles/vscode/README.md
+    for (int i = 1; i <= 50 - previous_path_x.size(); i++)
+		  {
+			  ref_vel += speed_diff;
+              if ( ref_vel > MAX_SPEED ) {
+                ref_vel = MAX_SPEED;
+              } else if ( ref_vel < MAX_ACC ) {
+                ref_vel = MAX_ACC;
+              }
+			  double N = target_dist / (0.02 * ref_vel / 2.24);
+			  double x_point = x_addon + target_x / N;
+			  double y_point = s(x_point);
 
-The README should explain what the profile does, how to take advantage of it,
-and how to install it.
+			  x_addon = x_point;
+			  double x_ref = x_point;
+			  double y_ref = y_point;
+			  x_point = (x_ref * cos(ref_yaw) - y_ref * sin(ref_yaw));
+			  y_point = (x_ref * sin(ref_yaw) + y_ref * cos(ref_yaw));
+			  x_point += ref_x;
+			  y_point += ref_y;
 
-Frankly, I've never been involved in a project with multiple IDE profiles
-before. I believe the best way to handle this would be to keep them out of the
-repo root to avoid clutter. My expectation is that most profiles will include
-instructions to copy files to a new location to get picked up by the IDE, but
-that's just a guess.
-
-One last note here: regardless of the IDE used, every submitted project must
-still be compilable with cmake and make./
-
-## How to write a README
-A well written README file can enhance your project and portfolio.  Develop your abilities to create professional README files by completing [this free course](https://www.udacity.com/course/writing-readmes--ud777).
-
+			  next_x_vals.push_back(x_point);
+			  next_y_vals.push_back(y_point);
+		  }
